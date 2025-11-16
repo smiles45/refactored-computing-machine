@@ -11,6 +11,14 @@ const Install: React.FC = () => {
   const [isInstalling, setIsInstalling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSupported, setIsSupported] = useState(true);
+  const [debugInfo, setDebugInfo] = useState<{
+    hasServiceWorker: boolean;
+    isHttps: boolean;
+    hasManifest: boolean;
+    userAgent: string;
+    swRegistered: boolean;
+    iconsExist: boolean;
+  } | null>(null);
 
   useEffect(() => {
     // Check if app is already installed
@@ -19,20 +27,11 @@ const Install: React.FC = () => {
       return;
     }
 
-    // Check if running as standalone (already installed)
+    // Check if running as standalone (already installed) - iOS Safari
     if ((window.navigator as any).standalone === true) {
       setIsInstalled(true);
       return;
     }
-
-    // Listen for beforeinstallprompt event
-    const handler = (e: Event) => {
-      e.preventDefault();
-      setDeferredPrompt(e as BeforeInstallPromptEvent);
-      setIsSupported(true);
-    };
-
-    window.addEventListener('beforeinstallprompt', handler);
 
     // Check if browser supports PWA installation
     if (!('serviceWorker' in navigator)) {
@@ -40,14 +39,98 @@ const Install: React.FC = () => {
       setError('Service Workers are not supported in this browser.');
     }
 
+    // Listen for beforeinstallprompt event
+    const handler = (e: Event) => {
+      console.log('beforeinstallprompt event fired in Install page');
+      e.preventDefault();
+      const prompt = e as BeforeInstallPromptEvent;
+      setDeferredPrompt(prompt);
+      // Store globally so it can be shared
+      (window as any).deferredPrompt = prompt;
+      setIsSupported(true);
+    };
+
+    window.addEventListener('beforeinstallprompt', handler);
+
+    // Check if prompt was already captured by another component
+    const checkStoredPrompt = () => {
+      if ((window as any).deferredPrompt) {
+        console.log('Found stored deferredPrompt from another component');
+        setDeferredPrompt((window as any).deferredPrompt);
+        setIsSupported(true);
+      }
+    };
+
+    // Check immediately and after delays
+    checkStoredPrompt();
+    setTimeout(checkStoredPrompt, 500);
+    setTimeout(checkStoredPrompt, 1000);
+    setTimeout(checkStoredPrompt, 2000);
+
+    // Check service worker registration and icons
+    const checkServiceWorker = async () => {
+      let swRegistered = false;
+      if ('serviceWorker' in navigator) {
+        try {
+          const registration = await navigator.serviceWorker.getRegistration();
+          swRegistered = !!registration;
+          console.log('Service Worker registered:', swRegistered);
+          if (registration) {
+            console.log('Service Worker scope:', registration.scope);
+            console.log('Service Worker state:', registration.active?.state);
+          }
+        } catch (err) {
+          console.error('Error checking service worker:', err);
+        }
+      }
+
+      // Check if icons exist
+      const checkIcons = async () => {
+        try {
+          const icon192 = await fetch('/icon-192.png', { method: 'HEAD' });
+          const icon512 = await fetch('/icon-512.png', { method: 'HEAD' });
+          return icon192.ok && icon512.ok;
+        } catch {
+          return false;
+        }
+      };
+      const iconsExist = await checkIcons();
+      console.log('Icons exist:', iconsExist);
+
+      // Set debug info
+      setDebugInfo({
+        hasServiceWorker: 'serviceWorker' in navigator,
+        isHttps: window.location.protocol === 'https:' || window.location.hostname === 'localhost',
+        hasManifest: document.querySelector('link[rel="manifest"]') !== null,
+        userAgent: navigator.userAgent,
+        swRegistered,
+        iconsExist
+      });
+
+      if (!iconsExist) {
+        setError('⚠️ PWA icons are missing! Please add icon-192.png and icon-512.png to the public/ folder. The install prompt requires these icons.');
+      }
+    };
+    checkServiceWorker();
+
     return () => {
       window.removeEventListener('beforeinstallprompt', handler);
     };
   }, []);
 
   const handleInstall = async () => {
-    if (!deferredPrompt) {
-      setError('Install prompt is not available. Please use your browser\'s install option.');
+    // Try to get prompt from multiple sources
+    let promptToUse = deferredPrompt;
+    
+    if (!promptToUse) {
+      // Check window global
+      if ((window as any).deferredPrompt) {
+        promptToUse = (window as any).deferredPrompt;
+      }
+    }
+
+    if (!promptToUse) {
+      setError('Install prompt is not available. The app may need to be built and served over HTTPS. Please use your browser\'s install option (look for the install icon in the address bar).');
       return;
     }
 
@@ -55,17 +138,24 @@ const Install: React.FC = () => {
     setError(null);
 
     try {
-      deferredPrompt.prompt();
-      const { outcome } = await deferredPrompt.userChoice;
+      // Call the prompt method
+      await promptToUse.prompt();
+      
+      // Wait for user choice
+      const { outcome } = await promptToUse.userChoice;
 
       if (outcome === 'accepted') {
         setIsInstalled(true);
         setDeferredPrompt(null);
+        if ((window as any).deferredPrompt) {
+          (window as any).deferredPrompt = null;
+        }
       } else {
         setError('Installation was cancelled.');
       }
     } catch (err: any) {
-      setError(err.message || 'An error occurred during installation.');
+      console.error('Install error:', err);
+      setError(err.message || 'An error occurred during installation. Please try using your browser\'s install option.');
     } finally {
       setIsInstalling(false);
     }
@@ -148,34 +238,57 @@ const Install: React.FC = () => {
         </p>
 
         {error && (
-          <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-            <p className="text-red-600 dark:text-red-400 text-sm">{error}</p>
+          <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border-2 border-red-300 dark:border-red-700 rounded-lg">
+            <div className="flex items-start">
+              <svg className="w-6 h-6 text-red-600 dark:text-red-400 mr-3 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <div className="flex-1">
+                <p className="text-red-800 dark:text-red-300 font-semibold mb-2">{error}</p>
+                {error.includes('icons') && (
+                  <div className="mt-3 p-3 bg-white dark:bg-gray-800 rounded border border-red-200 dark:border-red-800">
+                    <p className="text-sm text-gray-700 dark:text-gray-300 mb-2"><strong>Quick Fix:</strong></p>
+                    <ol className="text-sm text-gray-600 dark:text-gray-400 list-decimal list-inside space-y-1">
+                      <li>Open <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">public/generate-icons.html</code> in your browser</li>
+                      <li>Click "Generate Icons" and download both files</li>
+                      <li>Save them as <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">icon-192.png</code> and <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">icon-512.png</code> in the <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">public/</code> folder</li>
+                      <li>Refresh this page</li>
+                    </ol>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         )}
 
-        {deferredPrompt ? (
-          <div className="mb-6">
-            <button
-              onClick={handleInstall}
-              disabled={isInstalling}
-              className="w-full bg-blue-600 text-white px-6 py-4 rounded-lg hover:bg-blue-700 transition-colors font-semibold text-lg disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
-              {isInstalling ? (
-                <>
-                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                  Installing...
-                </>
-              ) : (
-                <>
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
-                  Install StockFlow
-                </>
-              )}
-            </button>
-          </div>
-        ) : (
+        <div className="mb-6">
+          <button
+            onClick={handleInstall}
+            disabled={isInstalling}
+            className="w-full bg-blue-600 text-white px-6 py-4 rounded-lg hover:bg-blue-700 transition-colors font-semibold text-lg disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            {isInstalling ? (
+              <>
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                Installing...
+              </>
+            ) : (
+              <>
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                {deferredPrompt ? 'Install StockFlow' : 'Try Install (or use browser option)'}
+              </>
+            )}
+          </button>
+          {!deferredPrompt && (
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 text-center">
+              If the button doesn't work, look for the install icon (➕) in your browser's address bar
+            </p>
+          )}
+        </div>
+        
+        {!deferredPrompt && (
           <div className="mb-6 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
             <p className="text-yellow-800 dark:text-yellow-300 text-sm mb-4">
               The install button is not available. Please use your browser's install option:
@@ -188,6 +301,27 @@ const Install: React.FC = () => {
                 ))}
               </ol>
             </div>
+          </div>
+        )}
+
+        {/* Debug Info - only show in development */}
+        {(import.meta.env.DEV || import.meta.env.MODE === 'development') && debugInfo && (
+          <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg">
+            <h3 className="font-semibold text-gray-800 dark:text-white mb-2 text-sm">Debug Info:</h3>
+            <ul className="text-xs text-gray-600 dark:text-gray-400 space-y-1">
+              <li>Service Worker Support: {debugInfo.hasServiceWorker ? '✅' : '❌'}</li>
+              <li>Service Worker Registered: {debugInfo.swRegistered ? '✅' : '❌'}</li>
+              <li>HTTPS/Localhost: {debugInfo.isHttps ? '✅' : '❌'}</li>
+              <li>Manifest Found: {debugInfo.hasManifest ? '✅' : '❌'}</li>
+              <li>Icons Exist: {debugInfo.iconsExist ? '✅' : '❌'} {!debugInfo.iconsExist && <span className="text-red-500">(REQUIRED!)</span>}</li>
+              <li>Deferred Prompt Available: {deferredPrompt ? '✅' : '❌'}</li>
+              <li>Browser: {debugInfo.userAgent.includes('Chrome') ? 'Chrome' : debugInfo.userAgent.includes('Firefox') ? 'Firefox' : debugInfo.userAgent.includes('Safari') ? 'Safari' : 'Other'}</li>
+            </ul>
+            {!deferredPrompt && (
+              <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-2">
+                💡 Tip: The install prompt may not appear in development. Try building the app (<code>npm run build</code>) and serving it over HTTPS.
+              </p>
+            )}
           </div>
         )}
 

@@ -21,7 +21,10 @@ const PWAInstallPrompt: React.FC = () => {
 
     const handler = (e: Event) => {
       e.preventDefault();
-      setDeferredPrompt(e as BeforeInstallPromptEvent);
+      const prompt = e as BeforeInstallPromptEvent;
+      setDeferredPrompt(prompt);
+      // Store globally so Install page can access it
+      (window as any).deferredPrompt = prompt;
       // Show prompt after user has been on the page for a bit (5 seconds)
       // This gives them time to see the app first
       setTimeout(() => {

@@ -16,7 +16,7 @@ const Header: React.FC = () => {
           Afyagold
         </h1>
       </div>
-      <a
+      {/* <a
         href="/install"
         onClick={handleInstallClick}
         className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
@@ -25,7 +25,7 @@ const Header: React.FC = () => {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
         </svg>
         Install App
-      </a>
+      </a> */}
     </header>
   );
 };

@@ -1,11 +1,12 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Header from './components/Header';
 import Dashboard from './components/Dashboard';
 import StockIn from './components/StockIn';
 import StockOut from './components/StockOut';
 import Returns from './components/Returns';
 import Analytics from './components/Analytics';
+import Install from './components/Install';
 import PWAUpdatePrompt from './components/PWAUpdatePrompt';
 import PWAInstallPrompt from './components/PWAInstallPrompt';
 import { useInventory } from './hooks/useInventory';
@@ -15,6 +16,42 @@ import { CubeIcon, ArrowUpIcon, ArrowDownIcon, ArrowUturnLeftIcon, ChartBarIcon 
 const App: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
   const inventoryHook = useInventory();
+
+  // Sync URL with page state
+  useEffect(() => {
+    const updatePageFromUrl = () => {
+      const path = window.location.pathname;
+      if (path === '/install') {
+        setCurrentPage('install');
+      } else if (path === '/stock-in') {
+        setCurrentPage('stock-in');
+      } else if (path === '/stock-out') {
+        setCurrentPage('stock-out');
+      } else if (path === '/returns') {
+        setCurrentPage('returns');
+      } else if (path === '/analytics') {
+        setCurrentPage('analytics');
+      } else {
+        setCurrentPage('dashboard');
+      }
+    };
+
+    updatePageFromUrl();
+
+    // Handle browser back/forward buttons
+    window.addEventListener('popstate', updatePageFromUrl);
+
+    return () => {
+      window.removeEventListener('popstate', updatePageFromUrl);
+    };
+  }, []);
+
+  // Update URL when page changes
+  const handlePageChange = (page: Page) => {
+    setCurrentPage(page);
+    const path = page === 'dashboard' ? '/' : `/${page}`;
+    window.history.pushState({}, '', path);
+  };
 
   const renderPage = () => {
     switch (currentPage) {
@@ -28,6 +65,8 @@ const App: React.FC = () => {
         return <Returns processReturn={inventoryHook.processReturn} inventory={inventoryHook.inventory} />;
       case 'analytics':
         return <Analytics inventory={inventoryHook.inventory} transactions={inventoryHook.transactions} />;
+      case 'install':
+        return <Install />;
       default:
         return <Dashboard inventory={inventoryHook.inventory} transactions={inventoryHook.transactions} adjustStock={inventoryHook.adjustStock}/>;
     }
@@ -41,33 +80,37 @@ const App: React.FC = () => {
     { id: 'analytics', label: 'AI Analytics', icon: <ChartBarIcon /> },
   ];
 
+  const isInstallPage = currentPage === 'install';
+
   return (
     <div className="min-h-screen bg-gray-50 text-gray-800 dark:bg-gray-900 dark:text-gray-200 font-sans">
       <Header />
       <div className="flex flex-col md:flex-row">
-        <aside className="w-full md:w-64 bg-white dark:bg-gray-800 p-4 md:min-h-[calc(100vh-64px)]">
-          <nav>
-            <ul>
-              {navItems.map(item => (
-                <li key={item.id}>
-                  <button
-                    onClick={() => setCurrentPage(item.id as Page)}
-                    className={`w-full flex items-center p-3 my-2 rounded-lg transition-colors duration-200 text-left ${
-                      currentPage === item.id
-                        ? 'bg-blue-600 text-white shadow-md'
-                        : 'hover:bg-gray-200 dark:hover:bg-gray-700'
-                    }`}
-                  >
-                    <span className="mr-3">{item.icon}</span>
-                    {item.label}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </nav>
-        </aside>
-        <main className="flex-1 p-4 sm:p-6 lg:p-8">
-          {inventoryHook.isLoading ? (
+        {!isInstallPage && (
+          <aside className="w-full md:w-64 bg-white dark:bg-gray-800 p-4 md:min-h-[calc(100vh-64px)]">
+            <nav>
+              <ul>
+                {navItems.map(item => (
+                  <li key={item.id}>
+                    <button
+                      onClick={() => handlePageChange(item.id as Page)}
+                      className={`w-full flex items-center p-3 my-2 rounded-lg transition-colors duration-200 text-left ${
+                        currentPage === item.id
+                          ? 'bg-blue-600 text-white shadow-md'
+                          : 'hover:bg-gray-200 dark:hover:bg-gray-700'
+                      }`}
+                    >
+                      <span className="mr-3">{item.icon}</span>
+                      {item.label}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+          </aside>
+        )}
+        <main className={`${isInstallPage ? 'w-full' : 'flex-1'} p-4 sm:p-6 lg:p-8`}>
+          {!isInstallPage && inventoryHook.isLoading ? (
             <div className="flex items-center justify-center min-h-[400px]">
               <div className="text-center">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
@@ -79,8 +122,12 @@ const App: React.FC = () => {
           )}
         </main>
       </div>
-      <PWAUpdatePrompt />
-      <PWAInstallPrompt />
+      {!isInstallPage && (
+        <>
+          <PWAUpdatePrompt />
+          <PWAInstallPrompt />
+        </>
+      )}
     </div>
   );
 };

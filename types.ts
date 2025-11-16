@@ -22,4 +22,4 @@ export interface Transaction {
   timestamp: Date;
 }
 
-export type Page = 'dashboard' | 'stock-in' | 'stock-out' | 'returns' | 'analytics';
+export type Page = 'dashboard' | 'stock-in' | 'stock-out' | 'returns' | 'analytics' | 'install';

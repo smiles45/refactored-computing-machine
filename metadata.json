@@ -1,0 +1,5 @@
+{
+  "name": "StockFlow Inventory SaaS",
+  "description": "A simple and integrated SaaS system for managing company inventory, including stock-in, stock-out, returns, and AI-powered analytics.",
+  "requestFramePermissions": []
+}
